@@ -4,6 +4,44 @@ from unittest.mock import MagicMock
 import kemonodownloader.creator_downloader as cd
 
 
+class FakeThread:
+    def __init__(self, running=False):
+        self._running = running
+        self.stop_called = False
+
+    def stop(self):
+        self.stop_called = True
+        self._running = False
+
+    def isRunning(self):
+        return self._running
+
+
+def test_cancellation_thread_stops_and_finishes():
+    t = FakeThread(running=False)
+    ct = cd.CancellationThread([t])
+    # run directly (not starting as QThread) to exercise run logic
+    ct.run()
+    assert t.stop_called
+
+
+def test_checkbox_toggle_thread_updates_states():
+    # visible_posts: list of (title, (post_id, ...))
+    visible = [("post1", ("id1", None)), ("post2", ("id2", None))]
+    checked = {"id1": False, "id2": False, "id3": True}
+
+    # check_all_state: 2 == Checked, otherwise Unchecked
+    thread = cd.CheckboxToggleThread(visible, checked, 2)
+    # run directly to avoid QThread scheduling
+    thread.run()
+
+    # After running with check_all_state==2, visible ids should be True
+    assert thread.checked_urls["id1"] is True
+    assert thread.checked_urls["id2"] is True
+    # Non-visible id should retain its original value
+    assert thread.checked_urls["id3"] is True
+
+
 def _mk_signal_mock():
     return SimpleNamespace(emit=MagicMock())
 
