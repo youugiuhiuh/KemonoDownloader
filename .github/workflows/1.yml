@@ -1,4 +1,4 @@
-name: Build & Release KemonoDownloader
+name: Build KemonoDownloader
 
 on:
   workflow_dispatch:
@@ -23,7 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -37,10 +38,12 @@ jobs:
         shell: bash
         run: |
           VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['tool']['briefcase']['version'])")
+
           if [ -z "$VERSION" ]; then
             echo "Version not found!"
             exit 1
           fi
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Detected version: $VERSION"
 
@@ -49,32 +52,62 @@ jobs:
 
     strategy:
       fail-fast: false
+
       matrix:
         include:
+          #################################################
           # Windows MSI
+          #################################################
+
           - os: windows-latest
-            artifact_name: windows-msi
+            platform: windows
             build_type: msi
+            artifact_name: windows-msi
 
+          #################################################
           # Windows Portable
+          #################################################
+
           - os: windows-latest
-            artifact_name: windows-portable
+            platform: windows
             build_type: portable
+            artifact_name: windows-portable
 
-          # macOS
+          #################################################
+          # macOS ARM64
+          #################################################
+
           - os: macos-latest
-            artifact_name: macos
+            platform: macos
             build_type: dmg
+            artifact_name: macos-arm64
 
+          #################################################
+          # macOS Intel
+          #################################################
+
+          - os: macos-13
+            platform: macos
+            build_type: dmg
+            artifact_name: macos-x86_64
+
+          #################################################
           # Linux DEB
-          - os: ubuntu-latest
-            artifact_name: linux-deb
-            build_type: deb
+          #################################################
 
-          # Linux RPM
           - os: ubuntu-latest
-            artifact_name: linux-rpm
+            platform: linux
+            build_type: deb
+            artifact_name: linux-deb
+
+          #################################################
+          # Linux RPM
+          #################################################
+
+          - os: ubuntu-latest
+            platform: linux
             build_type: rpm
+            artifact_name: linux-rpm
 
     runs-on: ${{ matrix.os }}
 
@@ -83,37 +116,103 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      #################################################
+      # Setup Python
+      #################################################
+
       - name: Setup Python
         if: runner.os != 'Linux'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      #################################################
+      # Linux System Python
+      #################################################
+
+      - name: Install Linux system Python
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            python3 \
+            python3-pip \
+            python3-venv \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libgirepository1.0-dev \
+            libcairo2-dev \
+            gir1.2-gtk-3.0 \
+            pkg-config \
+            build-essential \
+            rpm
+
+      #################################################
+      # Install Dependencies
+      #################################################
+
       - name: Install dependencies
         shell: bash
         run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            # Use system Python to avoid Briefcase exit 200
-            sudo apt-get update
-            sudo apt-get install -y python3 python3-pip python3-venv
-            python3 -m pip install --upgrade pip
-            if [ "${{ matrix.build_type }}" = "portable" ]; then
-              python3 -m pip install pyinstaller toml -r requirements.txt
+          echo "Runner OS: $RUNNER_OS"
+
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+
+            python3 -m pip install --break-system-packages --upgrade pip
+
+            if [[ "${{ matrix.build_type }}" == "portable" ]]; then
+              python3 -m pip install --break-system-packages \
+                pyinstaller \
+                toml \
+                -r requirements.txt
             else
-              python3 -m pip install briefcase toml PyQt6 -r requirements.txt
+              python3 -m pip install --break-system-packages \
+                briefcase \
+                toml \
+                PyQt6 \
+                -r requirements.txt
             fi
+
           else
-            # Windows/macOS
+
             python -m pip install --upgrade pip
-            if [ "${{ matrix.build_type }}" = "portable" ]; then
+
+            if [[ "${{ matrix.build_type }}" == "portable" ]]; then
               pip install pyinstaller toml -r requirements.txt
             else
               pip install briefcase toml PyQt6 -r requirements.txt
             fi
 
-      ###########################################################
-      # Windows Portable EXE
-      ###########################################################
+          fi
+
+      #################################################
+      # Fix PEP639 warning
+      #################################################
+
+      - name: Patch pyproject.toml for PEP639
+        shell: bash
+        run: |
+          python << 'EOF'
+          from pathlib import Path
+
+          p = Path("pyproject.toml")
+          text = p.read_text(encoding="utf-8")
+
+          if 'license-files' not in text:
+              text = text.replace(
+                  'license = { file = "LICENSE" }',
+                  'license = "MIT"\nlicense-files = ["LICENSE"]'
+              )
+
+          p.write_text(text, encoding="utf-8")
+          EOF
+
+      #################################################
+      # Windows Portable Build
+      #################################################
+
       - name: Build Portable EXE
         if: matrix.build_type == 'portable'
         shell: bash
@@ -122,71 +221,139 @@ jobs:
             --noconsole \
             --icon "assets/icons/KemonoDownloader.ico" \
             --add-data "src/kemonodownloader/resources/KemonoDownloader.png;resources/" \
+            --collect-data fake_useragent \
             --distpath release \
+            --workpath build \
             --name "KemonoDownloader" \
             src/kemonodownloader/app.py
 
-          mv release/KemonoDownloader.exe \
-             release/W-KemonoDownloader-${{ needs.prepare.outputs.version }}-x86_64-Portable.exe
+          mv \
+            release/KemonoDownloader.exe \
+            release/W-KemonoDownloader-${{ needs.prepare.outputs.version }}-x86_64-Portable.exe
 
-      ###########################################################
-      # Briefcase Builds
-      ###########################################################
-      - name: Build Briefcase App
+      #################################################
+      # Briefcase Create
+      #################################################
+
+      - name: Briefcase create
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            python3 -m briefcase create
+          else
+            briefcase create
+          fi
+
+      #################################################
+      # Briefcase Build
+      #################################################
+
+      - name: Briefcase build
         if: matrix.build_type != 'portable'
         shell: bash
         run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            PYTHON_CMD=python3
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            python3 -m briefcase build
           else
-            PYTHON_CMD=python
+            briefcase build
           fi
 
-          $PYTHON_CMD -m briefcase create || [[ $? == 200 ]]
-          $PYTHON_CMD -m briefcase build
+      #################################################
+      # Package
+      #################################################
 
-          if [ "${{ matrix.build_type }}" = "msi" ]; then
-            $PYTHON_CMD -m briefcase package
-          elif [ "${{ matrix.build_type }}" = "dmg" ]; then
-            $PYTHON_CMD -m briefcase package --adhoc-sign
-          elif [ "${{ matrix.build_type }}" = "deb" ]; then
-            $PYTHON_CMD -m briefcase package -p deb || true
-          elif [ "${{ matrix.build_type }}" = "rpm" ]; then
-            $PYTHON_CMD -m briefcase package -p rpm || true
-          fi
+      - name: Package MSI
+        if: matrix.build_type == 'msi'
+        shell: bash
+        run: |
+          briefcase package
 
-      ###########################################################
-      # Rename artifacts
-      ###########################################################
-      - name: Prepare release files
+      - name: Package DMG
+        if: matrix.build_type == 'dmg'
+        shell: bash
+        run: |
+          briefcase package --adhoc-sign
+
+      - name: Package DEB
+        if: matrix.build_type == 'deb'
+        shell: bash
+        run: |
+          python3 -m briefcase package -p deb
+
+      - name: Package RPM
+        if: matrix.build_type == 'rpm'
+        shell: bash
+        run: |
+          python3 -m briefcase package -p rpm
+
+      #################################################
+      # Prepare Release Files
+      #################################################
+
+      - name: Prepare release directory
         shell: bash
         run: |
           mkdir -p release
-          case "${{ matrix.build_type }}" in
-            msi)
-              cp dist/KemonoDownloader-${{ needs.prepare.outputs.version }}.msi \
-                 release/W-KemonoDownloader-${{ needs.prepare.outputs.version }}-x86_64.msi
-              ;;
-            dmg)
-              cp dist/KemonoDownloader-${{ needs.prepare.outputs.version }}.dmg \
-                 release/M-KemonoDownloader-${{ needs.prepare.outputs.version }}-arm64.dmg
-              ;;
-            deb|rpm)
-              cp dist/*.$matrix.build_type release/
-              ;;
-          esac
+
+      - name: Prepare MSI
+        if: matrix.build_type == 'msi'
+        shell: bash
+        run: |
+          cp \
+            dist/KemonoDownloader-${{ needs.prepare.outputs.version }}.msi \
+            release/W-KemonoDownloader-${{ needs.prepare.outputs.version }}-x86_64.msi
+
+      - name: Prepare macOS ARM64
+        if: matrix.artifact_name == 'macos-arm64'
+        shell: bash
+        run: |
+          cp \
+            dist/KemonoDownloader-${{ needs.prepare.outputs.version }}.dmg \
+            release/M-KemonoDownloader-${{ needs.prepare.outputs.version }}-arm64.dmg
+
+      - name: Prepare macOS Intel
+        if: matrix.artifact_name == 'macos-x86_64'
+        shell: bash
+        run: |
+          cp \
+            dist/KemonoDownloader-${{ needs.prepare.outputs.version }}.dmg \
+            release/M-KemonoDownloader-${{ needs.prepare.outputs.version }}-x86_64.dmg
+
+      - name: Prepare DEB
+        if: matrix.build_type == 'deb'
+        shell: bash
+        run: |
+          cp dist/*.deb release/
+
+      - name: Prepare RPM
+        if: matrix.build_type == 'rpm'
+        shell: bash
+        run: |
+          cp dist/*.rpm release/
+
+      #################################################
+      # Upload Artifacts
+      #################################################
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: release/*
 
+  #####################################################
+  # Release
+  #####################################################
+
   release:
-    needs: build
+    needs:
+      - prepare
+      - build
+
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 
@@ -199,13 +366,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.prepare.outputs.version }}
+
           name: KemonoDownloader v${{ needs.prepare.outputs.version }}
+
           generate_release_notes: true
+
           files: |
             artifacts/**/*.msi
             artifacts/**/*.exe
             artifacts/**/*.dmg
             artifacts/**/*.deb
             artifacts/**/*.rpm
+
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
