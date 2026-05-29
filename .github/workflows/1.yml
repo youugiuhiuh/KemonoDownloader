@@ -12,7 +12,6 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.12"
-  FEDORA_VERSION: "fc42"
 
 jobs:
   prepare:
@@ -28,7 +27,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      - name: Install toml
         run: |
           python -m pip install --upgrade pip
           pip install toml
@@ -45,12 +44,43 @@ jobs:
           fi
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-
           echo "Detected version: $VERSION"
 
-  build-windows:
+  build:
     needs: prepare
-    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        include:
+          # Windows MSI
+          - os: windows-latest
+            artifact_name: windows-msi
+            build_type: msi
+
+          # Windows Portable
+          - os: windows-latest
+            artifact_name: windows-portable
+            build_type: portable
+
+          # macOS
+          - os: macos-latest
+            artifact_name: macos
+            build_type: dmg
+
+          # Linux DEB
+          - os: ubuntu-latest
+            artifact_name: linux-deb
+            build_type: deb
+
+          # Linux RPM
+          - os: ubuntu-latest
+            artifact_name: linux-rpm
+            build_type: rpm
+
+    runs-on: ${{ matrix.os }}
+
     timeout-minutes: 120
 
     steps:
@@ -61,18 +91,69 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
+        shell: bash
         run: |
           python -m pip install --upgrade pip
-          pip install briefcase PyQt6 toml
 
-      - name: Build MSI
+          if [ "${{ matrix.build_type }}" = "portable" ]; then
+            pip install pyinstaller toml -r requirements.txt
+          else
+            pip install briefcase toml PyQt6 -r requirements.txt
+          fi
+
+      ###########################################################
+      # Windows Portable EXE
+      ###########################################################
+
+      - name: Build Portable EXE
+        if: matrix.build_type == 'portable'
+        shell: bash
+        run: |
+          pyinstaller --onefile \
+            --noconsole \
+            --icon "assets/icons/KemonoDownloader.ico" \
+            --add-data "src/kemonodownloader/resources/KemonoDownloader.png;resources/" \
+            --distpath release \
+            --name "KemonoDownloader" \
+            src/kemonodownloader/app.py
+
+          mv \
+            release/KemonoDownloader.exe \
+            release/W-KemonoDownloader-${{ needs.prepare.outputs.version }}-x86_64-Portable.exe
+
+      ###########################################################
+      # Briefcase Builds
+      ###########################################################
+
+      - name: Build Briefcase App
+        if: matrix.build_type != 'portable'
         shell: bash
         run: |
           briefcase create
           briefcase build
-          briefcase package
 
-      - name: Rename artifact
+          if [ "${{ matrix.build_type }}" = "msi" ]; then
+            briefcase package
+          fi
+
+          if [ "${{ matrix.build_type }}" = "dmg" ]; then
+            briefcase package --adhoc-sign
+          fi
+
+          if [ "${{ matrix.build_type }}" = "deb" ]; then
+            briefcase package -p deb
+          fi
+
+          if [ "${{ matrix.build_type }}" = "rpm" ]; then
+            briefcase package -p rpm
+          fi
+
+      ###########################################################
+      # Rename artifacts
+      ###########################################################
+
+      - name: Prepare release files
+        if: matrix.build_type == 'msi'
         shell: bash
         run: |
           mkdir -p release
@@ -81,18 +162,47 @@ jobs:
             dist/KemonoDownloader-${{ needs.prepare.outputs.version }}.msi \
             release/W-KemonoDownloader-${{ needs.prepare.outputs.version }}-x86_64.msi
 
+      - name: Prepare macOS release
+        if: matrix.build_type == 'dmg'
+        shell: bash
+        run: |
+          mkdir -p release
+
+          cp \
+            dist/KemonoDownloader-${{ needs.prepare.outputs.version }}.dmg \
+            release/M-KemonoDownloader-${{ needs.prepare.outputs.version }}-arm64.dmg
+
+      - name: Prepare DEB release
+        if: matrix.build_type == 'deb'
+        shell: bash
+        run: |
+          mkdir -p release
+
+          cp dist/*.deb \
+            release/
+
+      - name: Prepare RPM release
+        if: matrix.build_type == 'rpm'
+        shell: bash
+        run: |
+          mkdir -p release
+
+          cp dist/*.rpm \
+            release/
+
+      ###########################################################
+      # Upload artifacts
+      ###########################################################
+
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-msi
-          path: release/*.msi
+          name: ${{ matrix.artifact_name }}
+          path: release/*
 
   release:
     needs:
       - prepare
-      - build-windows
-      - build-windows-portable
-      - build-macos
-      - build-linux
+      - build
 
     runs-on: ubuntu-latest
 
@@ -102,6 +212,7 @@ jobs:
           path: artifacts
 
       - name: List artifacts
+        shell: bash
         run: |
           find artifacts -type f
 
@@ -120,7 +231,6 @@ jobs:
             artifacts/**/*.dmg
             artifacts/**/*.deb
             artifacts/**/*.rpm
-            artifacts/**/*.pkg.tar.zst
 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
