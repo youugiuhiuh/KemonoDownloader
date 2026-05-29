@@ -35,6 +35,7 @@ jobs:
 
       - name: Read version from pyproject.toml
         id: version
+        shell: bash
         run: |
           VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['tool']['briefcase']['version'])")
 
@@ -85,170 +86,10 @@ jobs:
           name: windows-msi
           path: release/*.msi
 
-  build-windows-portable:
-    needs: prepare
-    runs-on: windows-latest
-    timeout-minutes: 120
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller toml
-
-      - name: Build portable exe
-        shell: bash
-        run: |
-          pyinstaller \
-            --onefile \
-            --noconsole \
-            --icon assets/icons/KemonoDownloader.ico \
-            --add-data "src/kemonodownloader/resources/KemonoDownloader.png;resources/" \
-            --collect-data fake_useragent \
-            --distpath dist \
-            --name KemonoDownloader \
-            src/kemonodownloader/app.py
-
-      - name: Rename artifact
-        shell: bash
-        run: |
-          mkdir -p release
-
-          cp \
-            dist/KemonoDownloader.exe \
-            release/W-KemonoDownloader-${{ needs.prepare.outputs.version }}-Portable.exe
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-portable
-          path: release/*.exe
-
-  build-macos:
-    needs: prepare
-    strategy:
-      matrix:
-        include:
-          - runner: macos-latest
-            arch: arm64
-
-          - runner: macos-13
-            arch: x86_64
-
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: |
-          brew install gettext
-
-          python -m pip install --upgrade pip
-          pip install briefcase PyQt6 toml
-
-      - name: Build DMG
-        shell: bash
-        run: |
-          briefcase create
-          briefcase build
-          briefcase package --adhoc-sign
-
-      - name: Rename artifact
-        shell: bash
-        run: |
-          mkdir -p release
-
-          cp \
-            dist/KemonoDownloader-${{ needs.prepare.outputs.version }}.dmg \
-            release/M-KemonoDownloader-${{ needs.prepare.outputs.version }}-${{ matrix.arch }}.dmg
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-${{ matrix.arch }}
-          path: release/*.dmg
-
-  build-linux:
-    needs: prepare
-
-    strategy:
-      matrix:
-        include:
-          - type: deb
-            image: ubuntu:noble
-
-          - type: rpm
-            image: fedora:latest
-
-          - type: pkg
-            image: archlinux:latest
-
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Linux package
-        run: |
-          docker run --rm \
-            -v $(pwd):/app \
-            -w /app \
-            ${{ matrix.image }} \
-            /bin/bash -c '
-
-            if command -v apt-get >/dev/null; then
-              apt-get update
-              apt-get install -y python3 python3-pip python3-venv git
-            fi
-
-            if command -v dnf >/dev/null; then
-              dnf install -y python3 python3-pip python3-devel gcc git rpm-build
-            fi
-
-            if command -v pacman >/dev/null; then
-              pacman -Syu --noconfirm
-              pacman -S --noconfirm python python-pip base-devel git
-            fi
-
-            python3 -m venv venv
-            . venv/bin/activate
-
-            pip install --upgrade pip
-            pip install briefcase PyQt6 toml
-
-            briefcase create
-            briefcase build
-            briefcase package -p ${{ matrix.type }}
-            '
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-${{ matrix.type }}
-          path: |
-            dist/*.deb
-            dist/*.rpm
-            dist/*.pkg.tar.zst
-
   release:
     needs:
       - prepare
       - build-windows
-      - build-windows-portable
-      - build-macos
-      - build-linux
 
     runs-on: ubuntu-latest
 
@@ -272,12 +113,6 @@ jobs:
 
           files: |
             artifacts/**/*.msi
-            artifacts/**/*.exe
-            artifacts/**/*.dmg
-            artifacts/**/*.deb
-            artifacts/**/*.rpm
-            artifacts/**/*.pkg.tar.zst
 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
