@@ -1,4 +1,4 @@
-name: Build & Release KemonoDownloader
+name: Build KemonoDownloader
 
 on:
   workflow_dispatch:
@@ -14,9 +14,6 @@ env:
   PYTHON_VERSION: "3.12"
 
 jobs:
-  # =========================
-  # VERSION
-  # =========================
   prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -29,18 +26,17 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - run: pip install toml
+      - name: Install toml
+        run: python -m pip install --upgrade pip toml
 
-      - id: version
+      - name: Read version
+        id: version
         shell: bash
         run: |
           VERSION=$(python -c "import toml; print(toml.load('pyproject.toml')['tool']['briefcase']['version'])")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "VERSION=$VERSION"
+          echo "Detected version: $VERSION"
 
-  # =========================
-  # BUILD MATRIX
-  # =========================
   build:
     needs: prepare
     strategy:
@@ -50,44 +46,39 @@ jobs:
           # Windows MSI
           - os: windows-latest
             type: msi
-            artifact: win-msi
-
+            artifact: windows-msi
+            arch: x86_64
           # Windows Portable
           - os: windows-latest
             type: portable
-            artifact: win-portable
-
-          # macOS ARM64
+            artifact: windows-portable
+            arch: x86_64
+          # macOS Universal2
           - os: macos-latest
             type: dmg
-            arch: arm64
-            artifact: mac-arm64
-
-          # macOS Intel
-          - os: macos-13
-            type: dmg
-            arch: x86_64
-            artifact: mac-intel
-
+            artifact: mac-universal
+            arch: universal2
           # Linux DEB
           - os: ubuntu-latest
             type: deb
             artifact: linux-deb
-
-          # Linux RPM (Ubuntu build)
-          - os: ubuntu-latest
+            arch: x86_64
+          # Linux RPM
+          - os: fedora-latest
             type: rpm
             artifact: linux-rpm
+            arch: x86_64
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
 
-      # =========================
-      # LINUX DEPENDENCIES
-      # =========================
-      - name: Linux system deps
+      # ========================
+      # Linux system deps
+      # ========================
+      - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -97,44 +88,50 @@ jobs:
             build-essential pkg-config \
             libgtk-3-dev libcairo2-dev libglib2.0-dev \
             gir1.2-gtk-3.0 \
-            libpulse0 libxcb-xinerama0 mesa-utils \
+            libpulse-mainloop-glib0 libpulse0 libxcb-xinerama0 mesa-utils \
             rpm fakeroot
 
-      # =========================
-      # PYTHON SETUP
-      # =========================
-      - name: Install Python deps
+      # ========================
+      # Python dependencies
+      # ========================
+      - name: Install Python dependencies
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            python3 -m pip install --break-system-packages -U pip
+            python3 -m pip install --break-system-packages --upgrade pip
+            if [[ "${{ matrix.type }}" == "portable" ]]; then
+              python3 -m pip install pyinstaller toml
+            else
+              python3 -m pip install briefcase toml PyQt6
+            fi
           else
-            python -m pip install -U pip
+            python -m pip install --upgrade pip
+            if [[ "${{ matrix.type }}" == "portable" ]]; then
+              pip install pyinstaller toml
+            else
+              pip install briefcase toml PyQt6
+            fi
           fi
 
-          if [[ "${{ matrix.type }}" == "portable" ]]; then
-            pip install pyinstaller toml
-          else
-            pip install briefcase toml PyQt6
-          fi
-
-      # =========================
-      # PORTABLE BUILD
-      # =========================
-      - name: Build Portable
+      # ========================
+      # Portable build
+      # ========================
+      - name: Build Windows portable
         if: matrix.type == 'portable'
         shell: bash
         run: |
-          pyinstaller --onefile --noconsole \
+          pyinstaller --onefile \
+            --noconsole \
             --name KemonoDownloader \
             src/kemonodownloader/app.py
 
           mkdir -p release
-          mv dist/KemonoDownloader* release/
+          mv dist/KemonoDownloader.exe \
+            release/W-KemonoDownloader-${{ needs.prepare.outputs.version }}-Portable.exe
 
-      # =========================
-      # BRIEFCASE BUILD
-      # =========================
+      # ========================
+      # Briefcase create/build
+      # ========================
       - name: Briefcase create/build
         if: matrix.type != 'portable'
         shell: bash
@@ -147,59 +144,58 @@ jobs:
             briefcase build
           fi
 
-      # =========================
-      # PACKAGE
-      # =========================
+      # ========================
+      # Package
+      # ========================
       - name: Package
         if: matrix.type != 'portable'
         shell: bash
         run: |
           if [[ "${{ matrix.type }}" == "msi" ]]; then
             briefcase package
-
           elif [[ "${{ matrix.type }}" == "dmg" ]]; then
-            briefcase package --adhoc-sign
-
+            briefcase package --arch universal2
           elif [[ "${{ matrix.type }}" == "deb" ]]; then
             python3 -m briefcase package -p deb
-
           elif [[ "${{ matrix.type }}" == "rpm" ]]; then
             python3 -m briefcase package -p rpm
           fi
 
-      # =========================
-      # COLLECT ARTIFACTS
-      # =========================
+      # ========================
+      # Collect artifacts
+      # ========================
       - name: Collect artifacts
         shell: bash
         run: |
           mkdir -p release
-
-          find dist -type f -maxdepth 2 || true
-
-          cp -r dist/* release/ || true
+          if [[ "${{ matrix.type }}" == "msi" ]]; then
+            cp dist/*.msi release/
+          elif [[ "${{ matrix.type }}" == "dmg" ]]; then
+            cp dist/*.dmg release/
+            mv release/*.dmg release/M-KemonoDownloader-${{ needs.prepare.outputs.version }}-universal.dmg
+          elif [[ "${{ matrix.type }}" == "deb" ]]; then
+            cp dist/*.deb release/
+          elif [[ "${{ matrix.type }}" == "rpm" ]]; then
+            cp dist/*.rpm release/
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: release/*
 
-  # =========================
-  # RELEASE
-  # =========================
   release:
     needs: [prepare, build]
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: List files
+      - name: List artifacts
         run: find artifacts -type f
 
-      - name: GitHub Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.prepare.outputs.version }}
