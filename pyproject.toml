@@ -1,9 +1,10 @@
 [tool.briefcase]
 project_name = "Kemono Downloader"
 bundle = "com.voxdroid"
-version = "5.10.0"
+version = "5.12.0"
 url = "https://github.com/VoxDroid/KemonoDownloader"
-license.file = "LICENSE"
+license = "MIT"
+license-files = ["LICENSE"]
 author = "VoxDroid"
 author_email = "izeno.contact@gmail.com"
 

@@ -1,5 +1,58 @@
 # Kemono Downloader Release Notes
 
+## v5.12.0 (01 August 2026)
+**feat: Thumbnail Downloader tab, Auto Rename by order, and Post Text description downloading**
+
+- Add new Thumbnail Downloader tab (`kd_thumbnaildl.py`).
+  Introduces a dynamic thumbnail-only downloader tab supporting both Post Mode and Creator Mode. Features URL queue management, bulk file import, filter search, multi-selection, preview modal integration, and UI locking during detection and download operations.
+
+- Mirror creator folder strategy settings for thumbnail downloads.
+  Thumbnails follow the exact folder layout configured in settings (`per_post`, `by_file_type`, or `single_folder`) under `Downloads/Thumbnails/{user_id}_{creator_name}/`.
+
+- Add "Auto Rename and sort File name by order" option for thumbnails.
+  Optionally prepends per-post sequential ordering indexes (`1_`, `2_`, `3_`...) to downloaded thumbnail filenames for easy sorting.
+
+- Add "Download Post Text" description option for thumbnails.
+  Optionally fetches and saves post descriptions (`desc_{post_id}.txt`) alongside thumbnails with automatic HTML stripping via BeautifulSoup and 403 HTTP bypass handling (`Accept: text/css`).
+
+- Dynamic domain context propagation and robust API error handling.
+  Ensures service API calls, creator profile metadata resolution, and post text extraction correctly target the originating domain (`kemono.cr`, `coomer.st`, etc.) with 403 Cloudflare bypass retries.
+
+- Unit tests and integration test suite expansion.
+  Adds 11 comprehensive unit tests covering thumbnail detection, download thread, folder strategies, hash DB integration, preview modal, UI filter controls, and post text file creation.
+
+## v5.11.1 (05 July 2026)
+**fix: dynamic pawchive domain suffix resolution and documentation refresh**
+
+- Replace hardcoded `pawchive.st` handling with dynamic `pawchive.<suffix>` support.
+  The downloader now derives the active pawchive suffix from the domain list configuration and builds file hosts dynamically (`file.pawchive.<suffix>`), avoiding breakage when pawchive domains rotate.
+
+- Improve pawchive file URL normalization for dynamic domains.
+  URL cleanup now rewrites direct pawchive links to the correct file host based on the active suffix and still enforces `/data/` path normalization for compatibility.
+
+- Update tests and release documentation for v5.11.1.
+  Refreshed pawchive URL tests to be suffix-agnostic and updated version metadata/docs for this patch release.
+
+## v5.11.0 (17 June 2026)
+**feat: dynamic domain configuration and pawchive.st support**
+
+- Add dynamic domain configuration and pawchive.st support
+  Introduces a new `assets/config/domain` file to centralize domain names (kemono.cr, coomer.st, pawchive.st). The application now dynamically loads these domains, improving maintainability and allowing for easier updates to supported sites.
+
+- Update license definitions to use PEP 639 format
+  Refactored `pyproject.toml` to comply with PEP 639 for license metadata, ensuring better compatibility with modern Python packaging standards.
+
+- Improve download reliability and system compatibility
+  - Introduce `XDG_DATA_HOME` fallback on Linux for reliable data storage.
+  - Improve download interruption handling: partial files are now removed only after the file handle is closed, preventing potential crashes and ensuring cleaner state recovery.
+  - Removal of failed/interrupted files now gracefully handles `OSError`.
+
+- Comprehensive test suite expansion and CI stability improvements
+  - Mock `QMediaPlayer` and `QAudioOutput` to prevent native multimedia backend crashes in headless CI.
+  - Add an autouse fixture to reliably clean up leaked `QThreads` after each test.
+  - Add over 100 new unit tests covering `Creator Downloader`, fast-mode UI flows, file/download edge cases, preview caching, and post detection threads (including gzipped responses).
+  - Silenced `urllib3` OpenSSL/LibreSSL warnings in `pytest` configuration.
+
 ## v5.10.0 (10 February 2026)
 **feat: Fast Mode, SQLite hash storage, and customizable font settings**
 

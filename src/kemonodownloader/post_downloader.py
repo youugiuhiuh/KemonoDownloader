@@ -9,7 +9,6 @@ import re
 import threading
 import time
 from typing import Optional
-from urllib.parse import urljoin
 
 import qtawesome as qta
 import requests
@@ -44,6 +43,11 @@ from PyQt6.QtWidgets import (
 )
 
 from kemonodownloader.creator_downloader import get_session
+from kemonodownloader.domain_config import (
+    clean_file_url,
+    get_domain_config,
+    get_domains,
+)
 from kemonodownloader.hash_db import HashDB
 
 # Resolve translations dynamically at call time so tests can monkeypatch
@@ -122,31 +126,21 @@ def get_user_agent() -> str:
     return _user_agent
 
 
-API_BASE = "https://kemono.cr/api/v1"
+# API_BASE kept for backwards compatibility; resolves to first domain's api_base
+API_BASE = get_domain_config("")["api_base"]
 
 
-def get_domain_config(url):
-    """Determine domain configuration based on URL"""
-    if "coomer.st" in url:
-        return {
-            "domain": "coomer.st",
-            "base_url": "https://coomer.st",
-            "api_base": "https://coomer.st/api/v1",
-            "referer": "https://coomer.st/",
-        }
-    else:  # Default to kemono.cr
-        return {
-            "domain": "kemono.cr",
-            "base_url": "https://kemono.cr",
-            "api_base": "https://kemono.cr/api/v1",
-            "referer": "https://kemono.cr/",
-        }
+# get_domain_config is imported from domain_config; re-exported for
+# any callers that import it directly from this module.
+__all__ = ["get_domain_config", "get_domains"]
 
 
 def _build_headers() -> dict:
+    # Use the first/default domain's referer for the generic header set
+    default_referer = get_domain_config("")["referer"]
     return {
         "User-Agent": get_user_agent(),
-        "Referer": "https://kemono.cr/",
+        "Referer": default_referer,
         "Accept": "text/css",
         "Accept-Language": accept_language,
         "Accept-Encoding": "gzip, deflate",
@@ -179,6 +173,7 @@ class PreviewThread(QThread):
         self.downloaded_size = 0
         os.makedirs(self.cache_dir, exist_ok=True)
         self.domain_config = get_domain_config(url)
+        self.url = clean_file_url(url, self.domain_config)
 
     def run(self):
         ext = os.path.splitext(self.url.lower())[1]
@@ -855,6 +850,7 @@ class PostDetectionThread(QThread):
             ".mp3",
             ".wav",
             ".flac",
+            ".var",
             ".rar",
             ".mov",
             ".docx",
@@ -873,7 +869,7 @@ class PostDetectionThread(QThread):
             file_path = post["file"]["path"]
             file_name = post["file"].get("name", "")
             file_ext = get_effective_extension(file_path, file_name)
-            file_url = urljoin(self.domain_config["base_url"], file_path)
+            file_url = clean_file_url(file_path, self.domain_config)
             if "f=" not in file_url and file_name:
                 file_url += f"?f={file_name}"
             if file_ext in allowed_extensions:
@@ -887,9 +883,7 @@ class PostDetectionThread(QThread):
                     attachment_ext = get_effective_extension(
                         attachment_path, attachment_name
                     )
-                    attachment_url = urljoin(
-                        self.domain_config["base_url"], attachment_path
-                    )
+                    attachment_url = clean_file_url(attachment_path, self.domain_config)
                     if "f=" not in attachment_url and attachment_name:
                         attachment_url += f"?f={attachment_name}"
                     if attachment_ext in allowed_extensions:
@@ -898,7 +892,7 @@ class PostDetectionThread(QThread):
         if "content" in post and post["content"]:
             soup = BeautifulSoup(post["content"], "html.parser")
             for img in soup.select("img[src]"):
-                img_url = urljoin(self.domain_config["base_url"], img["src"])
+                img_url = clean_file_url(img["src"], self.domain_config)
                 img_ext = os.path.splitext(img_url)[1].lower()
                 img_name = os.path.basename(img_url)
                 if img_ext in allowed_extensions:
@@ -960,7 +954,7 @@ class FilePreparationThread(QThread):
             file_path = post["file"]["path"]
             file_name = post["file"].get("name", "")
             file_ext = get_effective_extension(file_path, file_name)
-            file_url = urljoin(self.domain_config["base_url"], file_path)
+            file_url = clean_file_url(file_path, self.domain_config)
             if "f=" not in file_url and file_name:
                 file_url += f"?f={file_name}"
             self.log.emit(
@@ -986,9 +980,7 @@ class FilePreparationThread(QThread):
                     attachment_ext = get_effective_extension(
                         attachment_path, attachment_name
                     )
-                    attachment_url = urljoin(
-                        self.domain_config["base_url"], attachment_path
-                    )
+                    attachment_url = clean_file_url(attachment_path, self.domain_config)
                     if "f=" not in attachment_url and attachment_name:
                         attachment_url += f"?f={attachment_name}"
                     self.log.emit(
@@ -1021,7 +1013,7 @@ class FilePreparationThread(QThread):
         if "content" in post and post["content"]:
             soup = BeautifulSoup(post["content"], "html.parser")
             for img in soup.select("img[src]"):
-                img_url = urljoin(self.domain_config["base_url"], img["src"])
+                img_url = clean_file_url(img["src"], self.domain_config)
                 img_ext = os.path.splitext(img_url)[1].lower()
                 img_name = os.path.basename(img_url)
                 self.log.emit(
@@ -2266,6 +2258,7 @@ class PostDownloaderTab(QWidget):
             ".mp3": QCheckBox("MP3"),
             ".wav": QCheckBox("WAV"),
             ".flac": QCheckBox("FLAC"),
+            ".var": QCheckBox("VAR"),
             ".rar": QCheckBox("RAR"),
             ".mov": QCheckBox("MOV"),
             ".docx": QCheckBox("DOCX"),
@@ -2841,7 +2834,7 @@ class PostDownloaderTab(QWidget):
             file_path = post["file"]["path"]
             file_name = post["file"].get("name", "")
             file_ext = get_effective_extension(file_path, file_name)
-            file_url = urljoin(domain_config["base_url"], file_path)
+            file_url = clean_file_url(file_path, domain_config)
             if "f=" not in file_url and file_name:
                 file_url += f"?f={file_name}"
             if ".jpg" in allowed_extensions and file_ext in [".jpg", ".jpeg"]:
@@ -2857,7 +2850,7 @@ class PostDownloaderTab(QWidget):
                     attachment_ext = get_effective_extension(
                         attachment_path, attachment_name
                     )
-                    attachment_url = urljoin(domain_config["base_url"], attachment_path)
+                    attachment_url = clean_file_url(attachment_path, domain_config)
                     if "f=" not in attachment_url and attachment_name:
                         attachment_url += f"?f={attachment_name}"
                     if ".jpg" in allowed_extensions and attachment_ext in [
@@ -2871,7 +2864,7 @@ class PostDownloaderTab(QWidget):
         if "content" in post and post["content"]:
             soup = BeautifulSoup(post["content"], "html.parser")
             for img in soup.select("img[src]"):
-                img_url = urljoin(domain_config["base_url"], img["src"])
+                img_url = clean_file_url(img["src"], domain_config)
                 img_ext = os.path.splitext(img_url)[1].lower()
                 img_name = os.path.basename(img_url)
                 if ".jpg" in allowed_extensions and img_ext in [".jpg", ".jpeg"]:
@@ -3813,6 +3806,7 @@ class PostDownloaderTab(QWidget):
                 ".7z",
                 ".rar",
                 ".clip",
+                ".var",
                 "jpe",
             ]
             supported_extensions = [
