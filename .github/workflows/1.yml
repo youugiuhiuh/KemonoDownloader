@@ -150,14 +150,22 @@ jobs:
         if: matrix.type != 'portable'
         shell: bash
         run: |
-          # --no-input: 不要互動式提問（CI 沒有 TTY，遇到提問會直接 Aborted by user / exit 214）
-          # --adhoc-sign: 沒有簽章憑證時做 ad-hoc 簽章，避免卡在要簽章身分的提示
-          # RPM 的檔案名不符是 briefcase 的已知問題（見下方「Normalize RPM output」），故先讓它非致命
+          # Linux 用 python3 -m briefcase；Windows/macOS 用裸 briefcase。
+          # 兩者不能互換：macOS runner 上 python3 是 Homebrew 的 Python，其中沒有 briefcase。
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            BC=(python3 -m briefcase)
+          else
+            BC=(briefcase)
+          fi
+
+          # --adhoc-sign: 不做簽章，避免卡在簽章身分的互動提問
+          #   （macOS 是 code signing identity，Linux 是 GPG identity）
+          # --no-input: 任何殘餘提問都不等待輸入（CI 沒有 TTY，等待會變成 Aborted by user / exit 214）
           case "${{ matrix.type }}" in
-            msi)  python3 -m briefcase package --adhoc-sign --no-input ;;
-            dmg)  python3 -m briefcase package -p dmg --adhoc-sign --no-input ;;
-            deb)  python3 -m briefcase package -p deb --adhoc-sign --no-input ;;
-            rpm)  python3 -m briefcase package -p rpm --adhoc-sign --no-input || \
+            msi)  "${BC[@]}" package --adhoc-sign --no-input ;;
+            dmg)  "${BC[@]}" package -p dmg --adhoc-sign --no-input ;;
+            deb)  "${BC[@]}" package -p deb --adhoc-sign --no-input ;;
+            rpm)  "${BC[@]}" package -p rpm --adhoc-sign --no-input || \
                     echo "::warning::briefcase rpm packaging 回報失敗，改由後續步驟直接收集 dist/ 下的 rpm" ;;
           esac
 
