@@ -44,6 +44,11 @@ from kemonodownloader.domain_config import (
     get_domain_config,
     get_domains,
 )
+from kemonodownloader.download_policy import (
+    acquire_pawchive_download,
+    get_request_headers,
+    release_pawchive_download,
+)
 from kemonodownloader.hash_db import HashDB
 from kemonodownloader.kd_language import translate
 
@@ -1797,57 +1802,63 @@ class CreatorDownloadThread(QThread):
             try:
                 headers = get_headers().copy()
                 headers["Referer"] = self.domain_config["referer"]
+                headers = get_request_headers(headers, file_url)
 
                 # Use requests instead of aiohttp for better proxy support
                 def download_with_requests():
                     session = get_session(self.settings.settings_tab)
-                    # Serialize SSL connection establishment to prevent
-                    # concurrent SSL access violations on Windows.
-                    with self._ssl_lock:
-                        if not self.is_running:
-                            raise Exception("Download cancelled before connection")
-                        response = session.get(
-                            file_url,
-                            headers=headers,
-                            stream=True,
-                            timeout=(30, 30),
-                        )
-                    # After headers are received each thread has its own
-                    # SSL connection and can stream data concurrently.
+                    if not acquire_pawchive_download(file_url, lambda: self.is_running):
+                        raise Exception("Download cancelled before rate-limit slot")
                     try:
-                        response.raise_for_status()
-                        header = response.headers.get("content-length")
+                        # Serialize SSL connection establishment to prevent
+                        # concurrent SSL access violations on Windows.
+                        with self._ssl_lock:
+                            if not self.is_running:
+                                raise Exception("Download cancelled before connection")
+                            response = session.get(
+                                file_url,
+                                headers=headers,
+                                stream=True,
+                                timeout=(30, 30),
+                            )
+                        # After headers are received each thread has its own
+                        # SSL connection and can stream data concurrently.
                         try:
-                            file_size = int(header) if header is not None else 0
-                        except Exception:
-                            file_size = 0
-                        downloaded_size = 0
+                            response.raise_for_status()
+                            header = response.headers.get("content-length")
+                            try:
+                                file_size = int(header) if header is not None else 0
+                            except Exception:
+                                file_size = 0
+                            downloaded_size = 0
 
-                        file_handle = open(full_path, "wb")
-                        try:
-                            for chunk in response.iter_content(chunk_size=8192):
-                                if not self.is_running:
-                                    raise Exception("Download interrupted by user")
-                                if chunk:
-                                    file_handle.write(chunk)
-                                    downloaded_size += len(chunk)
-                                    if file_size > 0:
-                                        progress = int(
-                                            (downloaded_size / file_size) * 100
+                            file_handle = open(full_path, "wb")
+                            try:
+                                for chunk in response.iter_content(chunk_size=8192):
+                                    if not self.is_running:
+                                        raise Exception("Download interrupted by user")
+                                    if chunk:
+                                        file_handle.write(chunk)
+                                        downloaded_size += len(chunk)
+                                        if file_size > 0:
+                                            progress = int(
+                                                (downloaded_size / file_size) * 100
+                                            )
+                                        else:
+                                            progress = 0
+                                        self._safe_emit(
+                                            self.file_progress,
+                                            file_index,
+                                            min(progress, 100),
                                         )
-                                    else:
-                                        progress = 0
-                                    self._safe_emit(
-                                        self.file_progress,
-                                        file_index,
-                                        min(progress, 100),
-                                    )
-                        finally:
-                            file_handle.close()
+                            finally:
+                                file_handle.close()
 
-                        return file_size, downloaded_size
+                            return file_size, downloaded_size
+                        finally:
+                            response.close()
                     finally:
-                        response.close()
+                        release_pawchive_download(file_url)
 
                 # Run the download in a thread to avoid blocking
                 file_size, downloaded_size = await asyncio.to_thread(

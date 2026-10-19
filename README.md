@@ -40,7 +40,7 @@
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Platforms">
   </a>
   <a href="https://github.com/VoxDroid/KemonoDownloader/releases">
-    <img src="https://img.shields.io/badge/version-v5.12.0-brightgreen" alt="Version">
+    <img src="https://img.shields.io/badge/version-v5.13.0-brightgreen" alt="Version">
   </a>
   <a>
     <img src="https://img.shields.io/github/v/release/VoxDroid/KemonoDownloader?label=Latest%20Release" alt="Latest Release">
@@ -105,12 +105,13 @@ We strongly encourage users to:
 - Use KemonoDownloader responsibly and only for content you have the legal right to access.
 - Support creators directly by subscribing to their official channels on platforms like Patreon, Pixiv Fanbox, or Gumroad.
 - Avoid redistributing downloaded content, as this may violate copyright laws and harm creators.
+- Respect site operators' resource limits. For Pawchive, the application identifies itself with a contactable user agent, starts at most one new file request per second, and allows at most five active file downloads across its downloaders.
 
 ### $\color{#90a4ae}{\sf{\text{Risks and Limitations}}}$ <a name="risks-and-limitations"></a>
 
 - **Legal Risks**: Downloading content from Kemono.cr, Coomer.st, and Pawchive.pw may violate copyright laws or the terms of service of the original platforms. Users assume all legal risks associated with using this tool.
 - **Dependency on Kemono.cr, Coomer.st, and Pawchive.pw**: KemonoDownloader relies on Kemono.cr, Coomer.st, and Pawchive.pw, which have a history of inconsistent updates and downtime. If these sites become unavailable, this tool will lose its functionality.
-- **Rate Limits and Errors**: Kemono.cr, Coomer.st, and Pawchive.pw may impose rate limits or other restrictions that affect download performance. The maintainers cannot guarantee uninterrupted access to these sites' content.
+- **Rate Limits and Errors**: Kemono.cr, Coomer.st, and Pawchive.pw may impose rate limits or other restrictions that affect download performance. Pawchive downloads use request pacing and a five-download cap to reduce overload and help prevent transient HTTP 403 responses; this cannot guarantee uninterrupted access or bypass server-side access controls.
 
 ### $\color{#90a4ae}{\sf{\text{Site Availability Status}}}$ <a name="site-availability-status"></a>
 

@@ -33,7 +33,7 @@ from kemonodownloader.post_downloader import PostDownloaderTab
 
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
-CURRENT_VERSION = "5.12.0"
+CURRENT_VERSION = "5.13.0"
 GITHUB_REPO = "VoxDroid/KemonoDownloader"
 
 # Available Google Fonts bundled with the app

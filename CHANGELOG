@@ -1,5 +1,13 @@
 # Kemono Downloader Release Notes
 
+## v5.13.0 (27 September 2026)
+**fix: responsible Pawchive request pacing and improved resilience to HTTP 403 responses**
+
+- Add a Pawchive-specific identifiable user agent with a contact address instead of impersonating a browser.
+- Limit Pawchive file downloads to five active downloads across the Post and Creator Downloaders, while continuing to respect the user's lower simultaneous-download setting.
+- Pace new Pawchive file requests to at most one per second, including retry attempts, to reduce server overload and help prevent transient HTTP 403 responses.
+- Add a Settings info button explaining the Pawchive policy and update the ethical-use documentation.
+
 ## v5.12.0 (01 August 2026)
 **feat: Thumbnail Downloader tab, Auto Rename by order, and Post Text description downloading**
 

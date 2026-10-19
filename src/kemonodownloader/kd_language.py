@@ -1249,6 +1249,46 @@ class KDLanguage:
                 "korean": "동시 다운로드:",
                 "chinese-simplified": "并行下载数:",
             },
+            "pawchive_policy_info_title": {
+                "english": "Pawchive Download Policy",
+                "japanese": "Pawchive ダウンロードポリシー",
+                "korean": "Pawchive 다운로드 정책",
+                "chinese-simplified": "Pawchive 下载策略",
+            },
+            "pawchive_policy_info_text": {
+                "english": (
+                    "To respect Pawchive's file servers, downloads use an "
+                    "identifiable KemonoDownloader user agent. Pawchive file "
+                    "requests are started at most once per second and are limited "
+                    "to five active downloads across both downloaders.\n\n"
+                    "Your Simultaneous Downloads setting still applies. For Pawchive, "
+                    "the effective limit is the lower of your setting and five. "
+                    "Kemono.cr and Coomer.st downloads are not affected by this policy."
+                ),
+                "japanese": (
+                    "Pawchiveのファイルサーバーに配慮し、ダウンロードでは識別可能な"
+                    "KemonoDownloaderのユーザーエージェントを使用します。Pawchiveへの"
+                    "ファイルリクエストは1秒に最大1回、同時ダウンロードは両方のダウンローダー"
+                    "を合わせて最大5件です。\n\n"
+                    "同時ダウンロード数の設定は引き続き適用されます。Pawchiveでは設定値と"
+                    "5の小さい方が有効な上限になります。Kemono.crとCoomer.stには影響しません。"
+                ),
+                "korean": (
+                    "Pawchive 파일 서버를 존중하기 위해 다운로드 시 식별 가능한 "
+                    "KemonoDownloader 사용자 에이전트를 사용합니다. Pawchive 파일 "
+                    "요청은 1초에 최대 한 번 시작되며 두 다운로더를 합쳐 동시에 최대 5개로 "
+                    "제한됩니다.\n\n"
+                    "동시 다운로드 설정은 계속 적용됩니다. Pawchive에서는 설정값과 5 중 더 "
+                    "작은 값이 실제 제한입니다. Kemono.cr 및 Coomer.st에는 이 정책이 적용되지 않습니다."
+                ),
+                "chinese-simplified": (
+                    "为尊重 Pawchive 文件服务器，下载时会使用可识别的 "
+                    "KemonoDownloader 用户代理。Pawchive 文件请求最多每秒启动一次，两个下载器"
+                    "合计最多同时进行 5 个下载。\n\n"
+                    "并行下载数设置仍然有效。对于 Pawchive，实际限制是设置值和 5 中较小的值。"
+                    "Kemono.cr 和 Coomer.st 不受此策略影响。"
+                ),
+            },
             "retry_settings": {
                 "english": "Retry Settings",
                 "japanese": "リトライ設定",

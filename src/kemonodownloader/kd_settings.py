@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 
+import qtawesome as qta
 from PyQt6.QtCore import QProcess, QSettings, Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -269,6 +270,16 @@ class SettingsTab(QWidget):
         self.download_spinbox.setStyleSheet("padding: 5px; border-radius: 5px;")
         self.download_spinbox.valueChanged.connect(self.update_simultaneous_downloads)
         download_layout.addWidget(self.download_spinbox, 0, 2)
+
+        self.pawchive_policy_info_button = QPushButton(
+            qta.icon("fa5s.info-circle", color="#A0C0FF"), ""
+        )
+        self.pawchive_policy_info_button.setFixedSize(28, 28)
+        self.pawchive_policy_info_button.setStyleSheet(
+            "background: #4A5B7A; border-radius: 5px;"
+        )
+        self.pawchive_policy_info_button.clicked.connect(self.show_pawchive_policy_info)
+        download_layout.addWidget(self.pawchive_policy_info_button, 0, 3)
 
         self.download_group.setLayout(download_layout)
         layout.addWidget(self.download_group)
@@ -1045,6 +1056,13 @@ class SettingsTab(QWidget):
         self.download_slider.blockSignals(False)
         self.download_spinbox.blockSignals(False)
 
+    def show_pawchive_policy_info(self):
+        QMessageBox.information(
+            self,
+            translate("pawchive_policy_info_title"),
+            translate("pawchive_policy_info_text"),
+        )
+
     def confirm_and_apply_settings(self):
         auto_check_status = (
             translate("enabled")
@@ -1280,6 +1298,9 @@ class SettingsTab(QWidget):
 
         self.download_group.setTitle(translate("download_settings"))
         self.simultaneous_downloads_label.setText(translate("simultaneous_downloads"))
+        self.pawchive_policy_info_button.setToolTip(
+            translate("pawchive_policy_info_title")
+        )
 
         self.retry_group.setTitle(translate("retry_settings"))
         self.creator_posts_max_attempts_label.setText(
