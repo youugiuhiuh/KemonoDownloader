@@ -1,0 +1,72 @@
+name: Monthly Upstream Sync
+
+# 每月 1 号 UTC 00:00 自动同步上游，也可手动触发
+on:
+  schedule:
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: https://github.com/VoxDroid/KemonoDownloader.git
+  UPSTREAM_BRANCH: main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "$UPSTREAM_REPO"
+          git fetch upstream "$UPSTREAM_BRANCH" --no-tags
+
+      - name: Merge upstream (this repo's .github/workflows wins on conflict)
+        id: merge
+        run: |
+          UPSTREAM_HEAD=$(git rev-parse "upstream/$UPSTREAM_BRANCH")
+
+          # 已经包含上游最新提交，无需操作
+          if git merge-base --is-ancestor "$UPSTREAM_HEAD" HEAD; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "已是最新，上游无新提交。"
+            exit 0
+          fi
+
+          if ! git merge --no-edit -X ours "$UPSTREAM_HEAD"; then
+            echo "合并冲突，放弃本次同步。"
+            git merge --abort
+            exit 1
+          fi
+
+          # -X ours 只在冲突时偏向本仓库，上游新增的 workflows 仍可能被带进来。
+          # 这里强制把 .github/workflows/ 恢复成本仓库的内容。
+          git checkout HEAD -- .github/workflows/
+          git add -A .github/workflows/
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "上游变更已全部在内，无需推送。"
+            exit 0
+          fi
+
+          git commit --amend --no-edit --no-verify
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push to this repository
+        if: steps.merge.outputs.changed == 'true'
+        run: git push origin HEAD:${{ github.ref_name }}
