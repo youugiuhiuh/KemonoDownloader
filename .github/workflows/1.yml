@@ -150,15 +150,43 @@ jobs:
         if: matrix.type != 'portable'
         shell: bash
         run: |
-          if [[ "${{ matrix.type }}" == "msi" ]]; then
-            briefcase package
-          elif [[ "${{ matrix.type }}" == "dmg" ]]; then
-            briefcase package -p dmg
-          elif [[ "${{ matrix.type }}" == "deb" ]]; then
-            python3 -m briefcase package -p deb
-          elif [[ "${{ matrix.type }}" == "rpm" ]]; then
-            python3 -m briefcase package -p rpm
+          # --no-input: 不要互動式提問（CI 沒有 TTY，遇到提問會直接 Aborted by user / exit 214）
+          # --adhoc-sign: 沒有簽章憑證時做 ad-hoc 簽章，避免卡在要簽章身分的提示
+          # RPM 的檔案名不符是 briefcase 的已知問題（見下方「Normalize RPM output」），故先讓它非致命
+          case "${{ matrix.type }}" in
+            msi)  python3 -m briefcase package --adhoc-sign --no-input ;;
+            dmg)  python3 -m briefcase package -p dmg --adhoc-sign --no-input ;;
+            deb)  python3 -m briefcase package -p deb --adhoc-sign --no-input ;;
+            rpm)  python3 -m briefcase package -p rpm --adhoc-sign --no-input || \
+                    echo "::warning::briefcase rpm packaging 回報失敗，改由後續步驟直接收集 dist/ 下的 rpm" ;;
+          esac
+
+      # briefcase 用 distribution_filename() 組出的 RPM 檔名會帶 distro tag
+      # (例如 kemonodownloader-5.13.0-1.elnoble.x86_64.rpm)，但 rpmbuild 的 spec
+      # 是 `Release: 1%{?dist}`，在 Ubuntu 上 %dist 未定義 → 實際產物是
+      # kemonodownloader-5.13.0-1.x86_64.rpm，兩者不符會讓 briefcase 的 move() 丟
+      # FileNotFoundError。這裡把實際建出的 rpm 從 rpmbuild 目錄補進 dist/。
+      - name: Normalize RPM output
+        if: matrix.type == 'rpm'
+        shell: bash
+        run: |
+          if compgen -G "dist/*.rpm" > /dev/null; then
+            echo "briefcase 已產出 rpm："
+            ls -l dist/*.rpm
+            exit 0
           fi
+
+          echo "dist/ 沒有 rpm，改從 rpmbuild 目錄回收…"
+          FOUND=$(find build -type f -name '*.rpm' -path '*/RPMS/*' | head -n 1)
+          if [[ -z "$FOUND" ]]; then
+            echo "::error::找不到任何 rpm 產物"
+            find build -type d -name RPMS -exec find {} -type f \; 2>/dev/null || true
+            exit 1
+          fi
+
+          mkdir -p dist
+          cp "$FOUND" "dist/$(basename "$FOUND")"
+          ls -l dist/*.rpm
 
       # ========================
       # Collect artifacts
@@ -178,6 +206,12 @@ jobs:
             cp dist/*.rpm release/
           fi
 
+          # 每個平台都必須真的交出檔案，否則讓該 matrix leg 明確失敗
+          if ! compgen -G "release/*" > /dev/null; then
+            echo "::error::此平台未產出任何檔案（type=${{ matrix.type }}）"
+            exit 1
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
@@ -185,6 +219,9 @@ jobs:
 
   release:
     needs: [prepare, build]
+    # 即使有單一平台建置失敗，也要把已成功平台的產物發佈出去，
+    # 而不是整個 release 一起被拖垮（原本 needs 失敗時 release 直接跳過）。
+    if: always() && needs.prepare.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -193,6 +230,15 @@ jobs:
 
       - name: List artifacts
         run: find artifacts -type f
+
+      - name: Fail if no artifacts
+        run: |
+          # download-artifact 會依 artifact 名稱建立子目錄，
+          # 所以用 find 遞迴偵測，不能用 compgen 的 ** 萬用字元。
+          if ! find artifacts -type f -print -quit 2>/dev/null | grep -q .; then
+            echo "::error::沒有任何可發佈的產物"
+            exit 1
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
