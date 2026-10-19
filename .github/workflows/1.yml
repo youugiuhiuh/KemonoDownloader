@@ -56,16 +56,28 @@ jobs:
             type: dmg
             artifact: mac-universal
             arch: universal2
-          # Linux DEB
-          - os: ubuntu-latest
+          # Linux DEB —— 舊 Ubuntu 24.04 (noble, Python 3.12 → libpython3.12)
+          # 這裡刻意寫死 ubuntu-24.04 而非 ubuntu-latest：
+          # ubuntu-latest 將於 2026-11 改指向 26.04，屆時會默默地換掉這個 leg 的目標。
+          - os: ubuntu-24.04
             type: deb
-            artifact: linux-deb
+            artifact: linux-deb-2404
             arch: x86_64
-          # Linux RPM
-          # GitHub Actions 没有 fedora-latest，使用 ubuntu-latest 配合安装 rpm 工具即可
-          - os: ubuntu-latest
+          # Linux RPM —— 舊 Ubuntu 24.04 (el-noble)
+          # GitHub Actions 沒有 fedora-latest，用 ubuntu 配合 rpm 工具即可
+          - os: ubuntu-24.04
             type: rpm
-            artifact: linux-rpm
+            artifact: linux-rpm-2404
+            arch: x86_64
+          # Linux DEB —— 新 Ubuntu 26.04 (resolute, Python 3.14 → libpython3.14)
+          - os: ubuntu-26.04
+            type: deb
+            artifact: linux-deb-2604
+            arch: x86_64
+          # Linux RPM —— 新 Ubuntu 26.04
+          - os: ubuntu-26.04
+            type: rpm
+            artifact: linux-rpm-2604
             arch: x86_64
 
     runs-on: ${{ matrix.os }}
@@ -209,9 +221,14 @@ jobs:
             cp dist/*.dmg release/
             mv release/*.dmg release/M-KemonoDownloader-${{ needs.prepare.outputs.version }}-universal.dmg
           elif [[ "${{ matrix.type }}" == "deb" ]]; then
+            # briefcase 的 deb 檔名已含目標代號 (ubuntu-noble / ubuntu-resolute)，
+            # 兩個 Ubuntu 版本的產物不會互蓋。
             cp dist/*.deb release/
           elif [[ "${{ matrix.type }}" == "rpm" ]]; then
-            cp dist/*.rpm release/
+            # 補上建置環境代號，讓 24.04/26.04 的 rpm 一眼可辨
+            for f in dist/*.rpm; do
+              cp "$f" "release/${{ matrix.artifact }}-$(basename "$f")"
+            done
           fi
 
           # 每個平台都必須真的交出檔案，否則讓該 matrix leg 明確失敗
